@@ -1,7 +1,7 @@
 ---
 - name: Configure and deploy Bookstore application
   hosts: web
-  become: yes
+  become: true
   vars:
     app_user: bookstore
     app_dir: /opt/bookstore
@@ -9,30 +9,30 @@
 
   tasks:
     - name: Install required packages
-      apt:
+      ansible.builtin.apt:
         name:
           - nginx
           - python3
           - python3-flask
           - curl
         state: present
-        update_cache: yes
+        update_cache: true
 
     - name: Create application user
-      user:
+      ansible.builtin.user:
         name: "{{ app_user }}"
         shell: /usr/sbin/nologin
-        system: yes
+        system: true
 
     - name: Create application directory
-      file:
+      ansible.builtin.file:
         path: "{{ app_dir }}"
         state: directory
         owner: "{{ app_user }}"
         mode: '0755'
 
     - name: Copy application code
-      copy:
+      ansible.builtin.copy:
         src: files/app.py
         dest: "{{ app_dir }}/app.py"
         owner: "{{ app_user }}"
@@ -40,47 +40,47 @@
       notify: Restart bookstore
 
     - name: Deploy systemd service
-      template:
+      ansible.builtin.template:
         src: templates/bookstore.service.j2
         dest: /etc/systemd/system/bookstore.service
         mode: '0644'
       notify: Restart bookstore
 
     - name: Configure Nginx reverse proxy
-      template:
+      ansible.builtin.template:
         src: templates/nginx.conf.j2
         dest: /etc/nginx/sites-available/bookstore
         mode: '0644'
       notify: Reload nginx
 
     - name: Enable Nginx site
-      file:
+      ansible.builtin.file:
         src: /etc/nginx/sites-available/bookstore
         dest: /etc/nginx/sites-enabled/bookstore
         state: link
       notify: Reload nginx
 
     - name: Remove default Nginx site
-      file:
+      ansible.builtin.file:
         path: /etc/nginx/sites-enabled/default
         state: absent
       notify: Reload nginx
 
     - name: Start and enable services
-      systemd:
+      ansible.builtin.systemd:
         name: "{{ item }}"
         state: started
-        enabled: yes
-        daemon_reload: yes
+        enabled: true
+        daemon_reload: true
       loop:
         - bookstore
         - nginx
 
     - name: Flush handlers so config is applied before the check
-      meta: flush_handlers
+      ansible.builtin.meta: flush_handlers
 
     - name: Verify application responds
-      uri:
+      ansible.builtin.uri:
         url: "http://localhost:{{ http_port }}"
         status_code: 200
       register: health
@@ -90,12 +90,12 @@
 
   handlers:
     - name: Restart bookstore
-      systemd:
+      ansible.builtin.systemd:
         name: bookstore
         state: restarted
-        daemon_reload: yes
+        daemon_reload: true
 
     - name: Reload nginx
-      systemd:
+      ansible.builtin.systemd:
         name: nginx
         state: reloaded
