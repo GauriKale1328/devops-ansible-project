@@ -1,0 +1,101 @@
+---
+- name: Configure and deploy Bookstore application
+  hosts: web
+  become: yes
+  vars:
+    app_user: bookstore
+    app_dir: /opt/bookstore
+    http_port: 80
+
+  tasks:
+    - name: Install required packages
+      apt:
+        name:
+          - nginx
+          - python3
+          - python3-flask
+          - curl
+        state: present
+        update_cache: yes
+
+    - name: Create application user
+      user:
+        name: "{{ app_user }}"
+        shell: /usr/sbin/nologin
+        system: yes
+
+    - name: Create application directory
+      file:
+        path: "{{ app_dir }}"
+        state: directory
+        owner: "{{ app_user }}"
+        mode: '0755'
+
+    - name: Copy application code
+      copy:
+        src: files/app.py
+        dest: "{{ app_dir }}/app.py"
+        owner: "{{ app_user }}"
+        mode: '0644'
+      notify: Restart bookstore
+
+    - name: Deploy systemd service
+      template:
+        src: templates/bookstore.service.j2
+        dest: /etc/systemd/system/bookstore.service
+        mode: '0644'
+      notify: Restart bookstore
+
+    - name: Configure Nginx reverse proxy
+      template:
+        src: templates/nginx.conf.j2
+        dest: /etc/nginx/sites-available/bookstore
+        mode: '0644'
+      notify: Reload nginx
+
+    - name: Enable Nginx site
+      file:
+        src: /etc/nginx/sites-available/bookstore
+        dest: /etc/nginx/sites-enabled/bookstore
+        state: link
+      notify: Reload nginx
+
+    - name: Remove default Nginx site
+      file:
+        path: /etc/nginx/sites-enabled/default
+        state: absent
+      notify: Reload nginx
+
+    - name: Start and enable services
+      systemd:
+        name: "{{ item }}"
+        state: started
+        enabled: yes
+        daemon_reload: yes
+      loop:
+        - bookstore
+        - nginx
+
+    - name: Flush handlers so config is applied before the check
+      meta: flush_handlers
+
+    - name: Verify application responds
+      uri:
+        url: "http://localhost:{{ http_port }}"
+        status_code: 200
+      register: health
+      retries: 5
+      delay: 2
+      until: health.status == 200
+
+  handlers:
+    - name: Restart bookstore
+      systemd:
+        name: bookstore
+        state: restarted
+        daemon_reload: yes
+
+    - name: Reload nginx
+      systemd:
+        name: nginx
+        state: reloaded
